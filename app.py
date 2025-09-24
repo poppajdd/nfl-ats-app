@@ -297,7 +297,7 @@ if st.session_state.schedule_df is not None:
         # Load historical training data
         historical_schedules = nfl.import_schedules(list(range(2019, season)))
         historical_schedules = historical_schedules[historical_schedules['game_type'] == 'REG']
-        historical_spreads = load_historical_spreads('nfl.kaggle.spread.data.csv')
+        historical_spreads = load_historical_spreads('nfl.kaggle.spreads.data.csv')
         merged_train_data = merge_historical_data(historical_schedules, historical_spreads)
         merged_train_data = merged_train_data.dropna(subset=['spread', 'home_score', 'away_score'])
 
