@@ -83,14 +83,21 @@ def merge_historical_data(schedules_df, spreads_df):
     schedules_df = normalize_schedule_team_abbreviations(schedules_df)
     schedules_df['season'] = pd.to_numeric(schedules_df['season'], errors='coerce').astype('Int64')
     schedules_df['week'] = pd.to_numeric(schedules_df['week'], errors='coerce').astype('Int64')
-
     spreads_df = normalize_team_names(spreads_df, ['home_team', 'away_team'])
     spreads_df['season'] = pd.to_numeric(spreads_df['season'], errors='coerce').astype('Int64')
     spreads_df['week'] = pd.to_numeric(spreads_df['week'], errors='coerce').astype('Int64')
-
     merged = pd.merge(schedules_df, spreads_df,
                       on=['season', 'week', 'home_team', 'away_team'],
                       how='left')
+    # New: Defensive column check
+    required_cols = ['spread', 'home_score', 'away_score']
+    missing_cols = [col for col in required_cols if col not in merged.columns]
+    if missing_cols:
+        st.error(f"Required columns missing from merged DataFrame: {missing_cols}")
+        return merged
+    # --- Missing data diagnostics ---
+    missing_rows = merged[merged[required_cols].isna().any(axis=1)]
+    # ... rest of your code ...
 
     # --- Missing data diagnostics ---
     missing_rows = merged[merged[['spread', 'home_score', 'away_score']].isna().any(axis=1)]
