@@ -17,7 +17,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Custom JS: Enter moves to next input ---
+# --- Move to next input with Enter ---
 def enable_enter_to_tab():
     st.markdown("""
         <script>
@@ -38,19 +38,24 @@ def enable_enter_to_tab():
 enable_enter_to_tab()
 
 # --- Utility Functions ---
+
 def normalize_team_names(df, team_cols):
     for col in team_cols:
         if col in df.columns:
-            df[col] = df[col].str.strip().str.upper()
+            df[col] = df[col].astype(str).str.strip().str.upper()
     return df
 
 def normalize_schedule_team_abbreviations(schedule_df):
+    if not {'home_team', 'away_team', 'season'}.issubset(schedule_df.columns):
+        return schedule_df
     mask = schedule_df['season'] >= 2020
     schedule_df.loc[mask & (schedule_df['home_team'] == 'OAK'), 'home_team'] = 'LV'
     schedule_df.loc[mask & (schedule_df['away_team'] == 'OAK'), 'away_team'] = 'LV'
     return schedule_df
 
 def normalize_spreads_team_abbreviations(spreads_df):
+    if not {'home_team', 'away_team', 'season'}.issubset(spreads_df.columns):
+        return spreads_df
     mask = spreads_df['season'] < 2020
     spreads_df.loc[mask & (spreads_df['home_team'] == 'LV'), 'home_team'] = 'OAK'
     spreads_df.loc[mask & (spreads_df['away_team'] == 'LV'), 'away_team'] = 'OAK'
@@ -70,37 +75,38 @@ def load_historical_spreads(spread_path):
         'schedule_playoff': 'schedule_playoff'
     }
     spreads.rename(columns=rename_map, inplace=True)
-    spreads = spreads[spreads['schedule_playoff'] == False]
+    for col in ['season', 'week']:
+        if col in spreads.columns:
+            spreads[col] = pd.to_numeric(spreads[col], errors='coerce').astype('Int64')
+    if 'schedule_playoff' in spreads.columns:
+        spreads = spreads[spreads['schedule_playoff'] == False]
     spreads = normalize_team_names(spreads, ['home_team', 'away_team'])
-    spreads['season'] = pd.to_numeric(spreads['season'], errors='coerce').astype('Int64')
-    spreads['week'] = pd.to_numeric(spreads['week'], errors='coerce').astype('Int64')
     spreads = normalize_spreads_team_abbreviations(spreads)
-    spreads = spreads[list(rename_map.values())]
+    for col in ['season','week','home_team','away_team','spread','home_score','away_score']:
+        if col not in spreads.columns:
+            spreads[col] = np.nan
+    spreads = spreads[['season','week','home_team','away_team','spread','home_score','away_score']]
     return spreads
 
 def merge_historical_data(schedules_df, spreads_df):
     schedules_df = normalize_team_names(schedules_df, ['home_team', 'away_team'])
     schedules_df = normalize_schedule_team_abbreviations(schedules_df)
-    schedules_df['season'] = pd.to_numeric(schedules_df['season'], errors='coerce').astype('Int64')
-    schedules_df['week'] = pd.to_numeric(schedules_df['week'], errors='coerce').astype('Int64')
+    for col in ['season', 'week']:
+        if col in schedules_df.columns:
+            schedules_df[col] = pd.to_numeric(schedules_df[col], errors='coerce').astype('Int64')
     spreads_df = normalize_team_names(spreads_df, ['home_team', 'away_team'])
-    spreads_df['season'] = pd.to_numeric(spreads_df['season'], errors='coerce').astype('Int64')
-    spreads_df['week'] = pd.to_numeric(spreads_df['week'], errors='coerce').astype('Int64')
+    for col in ['season', 'week']:
+        if col in spreads_df.columns:
+            spreads_df[col] = pd.to_numeric(spreads_df[col], errors='coerce').astype('Int64')
     merged = pd.merge(schedules_df, spreads_df,
                       on=['season', 'week', 'home_team', 'away_team'],
                       how='left')
-    # New: Defensive column check
-    required_cols = ['spread', 'home_score', 'away_score']
-    missing_cols = [col for col in required_cols if col not in merged.columns]
-    if missing_cols:
-        st.error(f"Required columns missing from merged DataFrame: {missing_cols}")
-        return merged
+    # Defensive column check for dropna and missing diagnostics:
+    for col in ['spread','home_score','away_score']:
+        if col not in merged.columns:
+            merged[col] = np.nan
     # --- Missing data diagnostics ---
-    missing_rows = merged[merged[required_cols].isna().any(axis=1)]
-    # ... rest of your code ...
-
-    # --- Missing data diagnostics ---
-    missing_rows = merged[merged[['spread', 'home_score', 'away_score']].isna().any(axis=1)]
+    missing_rows = merged[merged[['spread','home_score','away_score']].isna().any(axis=1)]
     if not missing_rows.empty:
         st.subheader("⚠️ Missing Historical Data Detected")
         st.write("Some games are missing spreads or scores:")
@@ -109,8 +115,6 @@ def merge_historical_data(schedules_df, spreads_df):
         st.write("Count of missing values:", missing_counts)
         missing_fraction = len(missing_rows)/len(merged)
         st.write(f"Fraction of games with missing data: {missing_fraction:.2%}")
-
-        # --- Summary table for reliability ---
         summary_table = pd.DataFrame({
             'Total Games': [len(merged)],
             'Games Missing Spread': [missing_counts['spread']],
@@ -120,26 +124,22 @@ def merge_historical_data(schedules_df, spreads_df):
         })
         st.subheader("📊 Missing Data Summary Table")
         st.dataframe(summary_table)
-
-    if not missing_rows.empty:
+        # Check swapped merge for possible missing data
         swapped_spreads = spreads_df.rename(columns={
             'home_team': 'away_team',
             'away_team': 'home_team',
             'home_score': 'away_score',
             'away_score': 'home_score'
         })[['season','week','home_team','away_team','spread','home_score','away_score']]
-
         swapped_merge = pd.merge(
             missing_rows.drop(columns=['spread','home_score','away_score'], errors='ignore'),
             swapped_spreads,
             on=['season','week','home_team','away_team'],
             how='left'
         )
-
         for col in ['spread','home_score','away_score']:
             if col in swapped_merge.columns:
-                merged.loc[merged['spread'].isna(), col] = swapped_merge[col].values
-
+                merged.loc[merged[col].isna(), col] = swapped_merge[col].values
     return merged
 
 def compute_rest_days(schedule_df):
@@ -148,13 +148,17 @@ def compute_rest_days(schedule_df):
         rest_days = []
         for idx, row in df.sort_values(['season','week']).iterrows():
             team = row[team_col]
-            try: game_date = pd.to_datetime(row['gameday'])
-            except: game_date = None
+            try:
+                game_date = pd.to_datetime(row['gameday'])
+            except Exception:
+                game_date = None
             delta = (game_date - last_game_dates[team]).days if team in last_game_dates and game_date else np.nan
             rest_days.append(delta)
-            if game_date: last_game_dates[team] = game_date
+            if game_date:
+                last_game_dates[team] = game_date
         return rest_days
-
+    if not {'season','week','home_team','away_team'}.issubset(schedule_df.columns):
+        return pd.DataFrame()
     schedule_df = schedule_df.sort_values(['season','week'])
     schedule_df['home_rest'] = days_since_last_game(schedule_df,'home_team')
     schedule_df['away_rest'] = days_since_last_game(schedule_df,'away_team')
@@ -162,6 +166,7 @@ def compute_rest_days(schedule_df):
     return schedule_df[['season','week','home_team','away_team','rest_diff']]
 
 def get_roster_injury_impact(years, max_week=None):
+    # Dummy implementation for code completeness - update with real injuries/stat provider!
     teams = ['LV','BUF','CHI','DAL']
     max_week = max_week or 17
     data = []
@@ -172,6 +177,7 @@ def get_roster_injury_impact(years, max_week=None):
     return pd.DataFrame(data)
 
 def get_yearly_stats_by_weeks(years,max_week=None):
+    # Dummy implementation for code completeness - update with real stats provider!
     teams = ['LV','BUF','CHI','DAL']
     max_week = max_week or 17
     data = []
@@ -194,7 +200,6 @@ def prepare_game_features(schedule_df, team_stats_df, rest_days_df, injury_df):
         df = df.merge(rest_days_df, on=['season','week','home_team','away_team'], how='left')
     else:
         df['rest_diff'] = 0
-
     if not injury_df.empty:
         home_inj = injury_df.rename(columns={'team':'home_team','injury_impact':'injury_home'})
         away_inj = injury_df.rename(columns={'team':'away_team','injury_impact':'injury_away'})
@@ -205,20 +210,20 @@ def prepare_game_features(schedule_df, team_stats_df, rest_days_df, injury_df):
         df['injury_diff'] = df['injury_home'] - df['injury_away']
     else:
         df['injury_diff'] = 0
-
+    # Mock features; for real code, join actual data!
     np.random.seed(0)
     df['epa_off_diff'] = np.random.normal(0,1,len(df))
     df['epa_def_diff'] = np.random.normal(0,1,len(df))
     df['snap_diff_offense'] = np.random.randint(-10,10,len(df))
     df['snap_diff_defense'] = np.random.randint(-10,10,len(df))
     df['home_advantage'] = 1
-
     if 'spread' not in df.columns: df['spread'] = 0
     return df
 
 def add_ats_cover_label(df):
     def cover(row):
-        if pd.isna(row['spread']) or pd.isna(row['home_score']) or pd.isna(row['away_score']): return np.nan
+        if pd.isna(row['spread']) or pd.isna(row['home_score']) or pd.isna(row['away_score']):
+            return np.nan
         margin = row['home_score'] - row['away_score']
         return int(margin > row['spread'])
     df['ats_cover'] = df.apply(cover, axis=1)
@@ -238,16 +243,14 @@ def predict_week(model, scaler, df, feature_cols):
     X_pred = scaler.transform(X_pred)
     df['ats_prob'] = model.predict_proba(X_pred)[:,1]
     df['predicted_cover'] = model.predict(X_pred)
-
     home_team_idx = df.columns.get_loc('home_team')
     df.insert(home_team_idx+1,'home_cover_prob',df['ats_prob'])
     away_team_idx = df.columns.get_loc('away_team')
     df.insert(away_team_idx+1,'away_cover_prob',1-df['ats_prob'])
-
     desired_order = ['game_id','home_team','home_cover_prob','away_team','away_cover_prob','spread']
     other_cols = [col for col in df.columns if col not in desired_order]
-    df = df[desired_order + other_cols]
-
+    reordered_cols = [col for col in desired_order if col in df.columns] + other_cols
+    df = df[reordered_cols]
     return df, df[df['predicted_cover']==1]
 
 def get_week_schedule(season, week):
@@ -256,22 +259,24 @@ def get_week_schedule(season, week):
     schedules = normalize_team_names(schedules,['home_team','away_team'])
     schedules = normalize_schedule_team_abbreviations(schedules)
     schedules['spread'] = np.nan
+    if 'game_id' not in schedules.columns:
+        schedules['game_id'] = schedules.index + 1
     return schedules
 
-# --- Streamlit App ---
-st.title("🏈 NFL ATS Prediction App with Missing Data Summary")
+# --- Streamlit App Logic ---
 
+st.title("🏈 NFL ATS Prediction App with Missing Data Summary")
 season = datetime.now().year
 week = st.number_input("Enter NFL week to predict:", min_value=1, max_value=18, step=1)
 
-if "schedule_df" not in st.session_state: st.session_state.schedule_df = None
+if "schedule_df" not in st.session_state:
+    st.session_state.schedule_df = None
 
 if st.button("Load Schedule"):
     st.session_state.schedule_df = get_week_schedule(season, week)
 
 if st.session_state.schedule_df is not None:
     schedule_df = st.session_state.schedule_df.copy()
-
     st.subheader("Enter Point Spreads")
     spreads = []
     for idx, row in schedule_df.iterrows():
@@ -279,43 +284,42 @@ if st.session_state.schedule_df is not None:
             f"{row['away_team']} @ {row['home_team']} (Week {row['week']})",
             value="", key=f"spread_{idx}"
         )
-        try: spread_value = float(spread_input) if spread_input.strip() != "" else None
-        except ValueError: spread_value = None
+        try:
+            spread_value = float(spread_input) if spread_input.strip() != "" else np.nan
+        except ValueError:
+            spread_value = np.nan
         spreads.append(spread_value)
     schedule_df['spread'] = spreads
     st.session_state.schedule_df = schedule_df
 
     if st.button("Run Predictions"):
+        # Import historical data
         historical_schedules = nfl.import_schedules(list(range(2019, season)))
         historical_schedules = historical_schedules[historical_schedules['game_type']=='REG']
         historical_spreads = load_historical_spreads('nfl.kaggle.spreads.data.csv')
         merged_train_data = merge_historical_data(historical_schedules, historical_spreads)
+        # Defensive check for required columns
+        for col in ['spread','home_score','away_score']:
+            if col not in merged_train_data.columns:
+                merged_train_data[col] = np.nan
         merged_train_data = merged_train_data.dropna(subset=['spread','home_score','away_score'])
-
         rest_days_train = compute_rest_days(merged_train_data)
         team_stats_train = get_yearly_stats_by_weeks(list(range(2019, season)))
         injury_train = get_roster_injury_impact(list(range(2019, season)))
-
         train_games = prepare_game_features(merged_train_data, team_stats_train, rest_days_train, injury_train)
         train_games = add_ats_cover_label(train_games)
         train_games.dropna(subset=['ats_cover'], inplace=True)
-
         feature_cols = ['epa_off_diff','epa_def_diff','snap_diff_offense','snap_diff_defense','rest_diff','injury_diff','home_advantage','spread']
         model, scaler = train_model(train_games, feature_cols)
-
         rest_days_pred = compute_rest_days(schedule_df)
         team_stats_pred = get_yearly_stats_by_weeks([season])
         injury_pred = get_roster_injury_impact([season])
-
         pred_games = prepare_game_features(schedule_df, team_stats_pred, rest_days_pred, injury_pred)
         predictions, upsets = predict_week(model, scaler, pred_games, feature_cols)
-
         st.subheader("Predictions")
         st.dataframe(predictions[['home_team','home_cover_prob','away_team','away_cover_prob','spread']])
-
         if not upsets.empty:
             st.subheader("Upset Covers Predicted")
             st.dataframe(upsets[['home_team','home_cover_prob','away_team','away_cover_prob','spread']])
-
         predictions.to_excel(f"nfl_ats_predictions_week_{week}.xlsx", index=False)
         st.success(f"Results saved to nfl_ats_predictions_week_{week}.xlsx")
