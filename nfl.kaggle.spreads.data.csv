@@ -1,4 +1,4 @@
-schedule_date,schedule_season,schedule_week,schedule_playoff,team_home,home_score,away_score,team_away,team_favorite_id,spread,over_under_line,stadium,stadium_neutral,weather_temperature,weather_wind_mph,weather_humidity,weather_detail
+schedule_date,schedule_season,schedule_week,schedule_playoff,team_home,score_home,score_away,team_away,team_favorite_id,spread_favorite,over_under_line,stadium,stadium_neutral,weather_temperature,weather_wind_mph,weather_humidity,weather_detail
 9/5/19,2019,1,FALSE,CHI,3,10,GB,CHI,-3,46.5,Soldier Field,FALSE,,,,
 9/8/19,2019,1,FALSE,ARI,27,27,DET,DET,-3,45.5,University of Phoenix Stadium,FALSE,72,0,,indoor
 9/8/19,2019,1,FALSE,CAR,27,30,LA,LAR,-2,49.5,Bank of America Stadium,FALSE,,,,
@@ -1673,6 +1673,4 @@ schedule_date,schedule_season,schedule_week,schedule_playoff,team_home,home_scor
 1/19/25,2024,Division,TRUE,PHI,28,22,LA,PHI,-7,43.5,Lincoln Financial Field,FALSE,34,8,67,snow
 1/26/25,2024,Conference,TRUE,PHI,55,23,WAS,PHI,-6,47,Lincoln Financial Field,FALSE,40,11,45,
 1/26/25,2024,Conference,TRUE,KC,32,29,BUF,KC,-1,49.5,GEHA Field at Arrowhead Stadium,FALSE,31,8,45,
-
 2/9/25,2024,Superbowl,TRUE,PHI,40,22,KC,KC,-1,48.5,Caesars Superdome,TRUE,72,0,0,indoor
-
